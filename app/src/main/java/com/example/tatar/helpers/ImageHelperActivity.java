@@ -1,14 +1,20 @@
 package com.example.tatar.helpers;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageDecoder;
+import android.graphics.Matrix;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
+import android.service.media.MediaBrowserService;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
@@ -18,6 +24,7 @@ import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -31,16 +38,23 @@ import com.google.mlkit.vision.label.ImageLabeler;
 import com.google.mlkit.vision.label.ImageLabeling;
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions;
 
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 
 public class ImageHelperActivity extends AppCompatActivity {
 
     private int REQUEST_PICK_IMAGE = 1000;
+    private int REQUEST_CAPTURE_IMAGE = 1001;
     private ImageView inputImageView;
     private TextView outputTextView;
 
     private ImageLabeler imageLabeler;
+
+    private File photoFile;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,7 +94,21 @@ public class ImageHelperActivity extends AppCompatActivity {
     }
 
     public void onStartCamera(View view) {
+        photoFile = createPhotoFile();
+        Uri fileUri = FileProvider.getUriForFile(this, "com.example.fileprovider", photoFile);
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, fileUri);
+        startActivityForResult(intent, REQUEST_CAPTURE_IMAGE);
+    }
 
+    private File createPhotoFile(){
+        File photoFileDir = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "ML_IMAGE_HELPER");
+        if (!photoFileDir.exists()){
+            photoFileDir.mkdirs();
+        }
+        String name = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        File file = new File(photoFileDir.getPath() + File.separator + name);
+        return file;
     }
 
     @Override
@@ -91,6 +119,21 @@ public class ImageHelperActivity extends AppCompatActivity {
             if (requestCode == REQUEST_PICK_IMAGE) {
                 Uri uri = data.getData();
                 Bitmap bitmap = loadFromUri(uri);
+                inputImageView.setImageBitmap(bitmap);
+                runClassification(bitmap);
+            } else if (requestCode == REQUEST_CAPTURE_IMAGE) {
+                Log.d("ML", "received callback from camera");
+                //Bitmap bitmap = BitmapFactory.decodeFile(photoFile.getAbsolutePath());
+                Uri imageUri = Uri.fromFile(photoFile);
+                Bitmap bitmap = BitmapFactory.decodeFile(photoFile.getAbsolutePath());
+                try {
+                    bitmap = ImageRotationHelper.handleSamplingAndRotationBitmap(
+                            getApplicationContext(),
+                            imageUri                // URI изображения
+                    );
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
                 inputImageView.setImageBitmap(bitmap);
                 runClassification(bitmap);
             }
@@ -137,5 +180,9 @@ public class ImageHelperActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
         });
+
+
+
     }
 }
+
